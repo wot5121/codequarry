@@ -1,0 +1,56 @@
+name: Women Brands Batch 1
+
+# Runs at 12:00 AM UTC daily (scheduled entry-point for the full chain).
+# Can also be triggered manually; manual runs are isolated and will NOT
+# kick off Batch 2 automatically.
+
+on:
+  schedule:
+    - cron: '0 0 * * *'   # 12:00 AM UTC every day
+  workflow_dispatch:
+
+# One run at a time per event type.
+# - Scheduled and chain runs share the "auto" slot → queue, never conflict.
+# - Manual runs each get a unique slot → run independently alongside (or after)
+#   the scheduled slot without cancelling it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'auto' }}
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        folder:
+          - women_brands_sub81
+          - women_brands_sub82
+          - women_brands_sub83
+          - women_brands_sub84
+          - women_brands_sub85
+      fail-fast: false   # let other folders continue even if one fails
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: |
+          pip install --upgrade pip
+          pip install playwright beautifulsoup4 boto3 requests openpyxl
+
+      - name: Install Playwright browsers
+        run: playwright install chromium --with-deps
+
+      - name: Run ${{ matrix.folder }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_S3_BUCKET: ${{ secrets.AWS_S3_BUCKET }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+        run: python -m ${{ matrix.folder }}.main
