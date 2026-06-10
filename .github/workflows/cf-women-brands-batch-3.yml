@@ -1,0 +1,63 @@
+name: CF Women Brands Batch 3
+
+# Automatically starts after "CF Women Brands Batch 2" completes as part of
+# the scheduled chain (i.e. Batch 2 was itself triggered by workflow_run,
+# not manually).  Manual runs of Batch 2 will NOT trigger this workflow.
+# Can also be triggered manually; manual runs do NOT continue the chain.
+
+on:
+  workflow_run:
+    workflows: ["CF Women Brands Batch 2"]
+    types: [completed]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'auto' }}
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    # Start automatically only when Batch 2 was chain-triggered (event ==
+    # 'workflow_run') AND it succeeded.
+    # Manual triggers of Batch 2 set event == 'workflow_dispatch', so they
+    # will NOT start this job automatically.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'workflow_run')
+
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        folder:
+          - women_brands_sub91
+          - women_brands_sub92
+          - women_brands_sub93
+          - women_brands_sub94
+      fail-fast: false
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: |
+          pip install --upgrade pip
+          pip install playwright beautifulsoup4 boto3 requests openpyxl
+
+      - name: Install Playwright browsers
+        run: playwright install chromium --with-deps
+
+      - name: Run CF.${{ matrix.folder }}
+        env:
+          CF_R2_ACCESS_KEY_ID: ${{ secrets.CF_R2_ACCESS_KEY_ID }}
+          CF_R2_SECRET_ACCESS_KEY: ${{ secrets.CF_R2_SECRET_ACCESS_KEY }}
+          CF_R2_ENDPOINT_URL: ${{ secrets.CF_R2_ENDPOINT_URL }}
+          CF_R2_BUCKET_NAME: ${{ secrets.CF_R2_BUCKET_NAME }}
+        run: python -m CF.${{ matrix.folder }}.main
